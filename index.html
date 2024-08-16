@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JSON Locale Compare and Merge</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        #app {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        h2 {
+            color: #444;
+            margin-top: 20px;
+        }
+        .file-drop-area {
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            margin-bottom: 15px;
+            transition: background-color 0.3s;
+        }
+        .file-drop-area.drag-over {
+            background-color: #e9e9e9;
+            border-color: #999;
+        }
+        .file-drop-area p {
+            margin: 0;
+            color: #666;
+        }
+        .file-name {
+            margin-top: 10px;
+            font-weight: bold;
+        }
+        button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        .conflict {
+            background-color: #FFF3CD;
+            border-left: 5px solid #FFA000;
+            padding: 15px;
+            margin-bottom: 10px;
+        }
+        .conflict button {
+            background-color: #008CBA;
+            margin-right: 10px;
+        }
+        pre {
+            background-color: #f1f1f1;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        .copy-button {
+            background-color: #008CBA;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <h1>JSON Locale Compare and Merge</h1>
+        <div 
+            class="file-drop-area" 
+            :class="{ 'drag-over': isDragging1 }"
+            @dragover.prevent
+            @dragenter.prevent="isDragging1 = true"
+            @dragleave.prevent="isDragging1 = false"
+            @drop.prevent="handleFileDrop($event, 1)"
+            @click="fileClick('fileInput1')"
+        >
+            <p>Drag & drop JSON file here or click to select</p>
+            <input type="file" @change="handleFileChange($event, 1)" style="display: none" ref="fileInput1">
+            <p v-if="file1Name" class="file-name">{{ file1Name }}</p>
+        </div>
+        <div 
+            class="file-drop-area" 
+            :class="{ 'drag-over': isDragging2 }"
+            @dragover.prevent
+            @dragenter.prevent="isDragging2 = true"
+            @dragleave.prevent="isDragging2 = false"
+            @drop.prevent="handleFileDrop($event, 2)"
+            @click="fileClick('fileInput2')" 
+        >
+            <p>Drag & drop JSON file here or click to select</p>
+            <input type="file" @change="handleFileChange($event, 2)" style="display: none" ref="fileInput2">
+            <p v-if="file2Name" class="file-name">{{ file2Name }}</p>
+        </div>
+        <button @click="compareAndMerge">Compare and Merge</button>
+        
+        <div v-if="conflicts.length > 0">
+            <h2>Conflicts:</h2>
+            <div v-for="conflict in conflicts" :key="conflict.path" class="conflict">
+                <p>Conflict at path: {{ conflict.path }}</p>
+                <p>File 1 value: {{ JSON.stringify(conflict.value1) }}</p>
+                <p>File 2 value: {{ JSON.stringify(conflict.value2) }}</p>
+                <div>
+                    <button @click="resolveConflict(conflict.path, conflict.value1)">
+                        Use File 1 Value
+                    </button>
+                    <button @click="resolveConflict(conflict.path, conflict.value2)">
+                        Use File 2 Value
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div v-if="mergedData">
+            <h2>Merged Data:</h2>
+            <button @click="copyMergedData" class="copy-button">Copy Merged Data</button>
+            <pre>{{ JSON.stringify(mergedData, null, 2) }}</pre>
+        </div>
+    </div>
+
+    <script>
+        const app = Vue.createApp({
+            data() {
+                return {
+                    file1: null,
+                    file2: null,
+                    file1Name: '',
+                    file2Name: '',
+                    mergedData: null,
+                    conflicts: [],
+                    isDragging1: false,
+                    isDragging2: false
+                }
+            },
+            methods: {
+              fileClick(item){
+                this.$refs[item].value = null;
+                this.$refs[item].click();
+              },
+                handleFileChange(event, fileNumber) {
+                    const file = event.target.files[0]
+                    this.processFile(file, fileNumber)
+                },
+                handleFileDrop(event, fileNumber) {
+                    const file = event.dataTransfer.files[0]
+                    this.processFile(file, fileNumber)
+                    this[`isDragging${fileNumber}`] = false
+                },
+                processFile(file, fileNumber) {
+                    if (file.type !== 'application/json') {
+                        alert('Please upload a JSON file')
+                        return
+                    }
+                    const reader = new FileReader()
+                    reader.onload = (e) => {
+                        try {
+                            const json = JSON.parse(e.target.result)
+                            if (fileNumber === 1) {
+                                this.file1 = json
+                                this.file1Name = file.name
+                            } else {
+                                this.file2 = json
+                                this.file2Name = file.name
+                            }
+                        } catch (error) {
+                            alert(`Error parsing JSON in file ${fileNumber}: ${error.message}`)
+                        }
+                    }
+                    reader.readAsText(file)
+                },
+                compareObjects(obj1, obj2, path = '') {
+                    const conflicts = []
+                    const merged = { ...obj1 }
+
+                    for (const [key, value2] of Object.entries(obj2)) {
+                        const newPath = path ? `${path}.${key}` : key
+
+                        if (!(key in obj1)) {
+                            merged[key] = value2
+                        } else if (typeof value2 !== typeof obj1[key]) {
+                            conflicts.push({ path: newPath, value1: obj1[key], value2 })
+                        } else if (typeof value2 === 'object' && value2 !== null) {
+                            const { conflicts: nestedConflicts, merged: nestedMerged } = this.compareObjects(obj1[key], value2, newPath)
+                            merged[key] = nestedMerged
+                            conflicts.push(...nestedConflicts)
+                        } else if (value2 !== obj1[key]) {
+                            conflicts.push({ path: newPath, value1: obj1[key], value2 })
+                        }
+                    }
+
+                    return { conflicts, merged }
+                },
+                compareAndMerge() {
+                    if (!this.file1 || !this.file2) {
+                        alert("Please upload both JSON files first.")
+                        return
+                    }
+
+                    const { conflicts, merged } = this.compareObjects(this.file1, this.file2)
+                    this.mergedData = merged
+                    this.conflicts = conflicts
+                },
+                resolveConflict(path, value) {
+                    const updateNestedProperty = (obj, path, value) => {
+                        const keys = path.split('.')
+                        let current = obj
+                        for (let i = 0; i < keys.length - 1; i++) {
+                            current = current[keys[i]]
+                        }
+                        current[keys[keys.length - 1]] = value
+                        return { ...obj }
+                    }
+
+                    this.mergedData = updateNestedProperty(this.mergedData, path, value)
+                    this.conflicts = this.conflicts.filter(conflict => conflict.path !== path)
+                },
+                copyMergedData() {
+                    const mergedDataString = JSON.stringify(this.mergedData, null, 2)
+                    navigator.clipboard.writeText(mergedDataString).then(() => {
+                        alert('Merged data copied to clipboard!')
+                    }, (err) => {
+                        console.error('Could not copy text: ', err)
+                        alert('Failed to copy merged data. Please try again.')
+                    })
+                }
+            },
+            mounted() {
+                this.$refs.fileInput1.addEventListener('click', (event) => event.target.value = null)
+                this.$refs.fileInput2.addEventListener('click', (event) => event.target.value = null)
+            }
+        })
+
+        app.mount('#app')
+    </script>
+</body>
+</html>
